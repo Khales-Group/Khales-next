@@ -3,7 +3,8 @@ import xmlrpc from "xmlrpc";
 // Shared Odoo XML-RPC client, ported from Khales-next's per-route
 // duplicated authenticate()/execute_kw boilerplate (see e.g.
 // Khales-next/pages/api/create-pdf-lead.js) into one helper so every
-// route here (contact, applications, leads, feedback) shares it.
+// route here (contact, applications, calculator requests, lead count)
+// shares it.
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -95,4 +96,25 @@ export async function odooSubscribeDefaultFollowers(uid: number, leadId: number)
     [[leadId], ODOO_DEFAULT_PARTNER_IDS],
     { context: { mail_notify: false } },
   );
+}
+
+/** Odoo's Datetime format ("YYYY-MM-DD HH:MM:SS", UTC). */
+export function odooDatetime(date: Date): string {
+  return date.toISOString().replace("T", " ").slice(0, 19);
+}
+
+// Odoo faults can echo submitted values (names, emails, phones) back in
+// their traceback, so only the kind of error is logged - never its text.
+export function describeOdooError(error: unknown): string {
+  if (!error || typeof error !== "object") return "Unknown error";
+  const { faultCode, faultString, code } = error as { faultCode?: unknown; faultString?: unknown; code?: unknown };
+  if (faultCode !== undefined) {
+    const lastLine = typeof faultString === "string" ? (faultString.trim().split("\n").pop() ?? "") : "";
+    const kind = /^[\w.]+(?=:)/.exec(lastLine)?.[0];
+    return `Odoo fault ${typeof faultCode === "number" ? faultCode : "?"}${kind ? ` (${kind})` : ""}`;
+  }
+  // Network errors (ECONNRESET, ETIMEDOUT...) and our own (missing env var,
+  // authentication failed) carry no visitor data.
+  if (typeof code === "string") return `Network error ${code}`;
+  return error instanceof Error ? error.message : "Unknown error";
 }
